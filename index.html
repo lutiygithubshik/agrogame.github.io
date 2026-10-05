@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <!-- Жёстко фиксируем масштаб для мобильных, чтобы экран не "прыгал" при тапах -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Агро-Квиз</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Manrope', 'sans-serif'] },
+                    colors: { brand: { 50: '#ecfdf5', 500: '#10b981', 600: '#059669', 900: '#022c22' } }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f1f5f9;
+            color: #0f172a;
+            /* Отключаем выделение текста, чтобы при быстром нажатии экран не синел */
+            -webkit-user-select: none;
+            user-select: none;
+            /* Отключаем системные эффекты тапа на мобильных */
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+            overflow: hidden; /* Фиксируем экран */
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .app-container {
+            width: 100%;
+            height: 100%;
+            max-width: 480px; /* Ограничиваем ширину для ПК, на телефоне будет 100% */
+            background: white;
+            position: relative;
+            display: flex;
+            flex-col;
+            overflow: hidden;
+            box-shadow: 0 0 40px rgba(0,0,0,0.1);
+        }
+
+        /* Анимации экранов */
+        .screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(20px);
+        }
+        .screen.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateX(0);
+        }
+        .screen.exit {
+            transform: translateX(-20px);
+            opacity: 0;
+        }
+
+        /* Кнопки ответов */
+        .option-btn {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 16px;
+            font-weight: 600;
+            font-size: 15px;
+            text-align: left;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .option-btn:active:not(:disabled) {
+            transform: scale(0.97);
+            background: #f8fafc;
+        }
+        
+        /* Состояния кнопок после ответа */
+        .option-btn.correct {
+            background: #ecfdf5;
+            border-color: #10b981;
+            color: #047857;
+            animation: pop 0.3s ease;
+        }
+        .option-btn.wrong {
+            background: #fef2f2;
+            border-color: #ef4444;
+            color: #b91c1c;
+            animation: shake 0.4s ease;
+        }
+        .option-btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.8;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+            100% { transform: scale(1); }
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-4px); }
+            40%, 80% { transform: translateX(4px); }
+        }
+
+        /* Скроллбар для длинных вопросов на маленьких экранах */
+        .scrollable-content {
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+        .scrollable-content::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- ЭКРАН 1: СТАРТ -->
+        <div id="screen-start" class="screen active bg-brand-900 justify-center items-center text-center p-6 text-white">
+            <div class="w-24 h-24 bg-brand-500/20 rounded-full flex justify-center items-center mb-6">
+                <i class="fa-solid fa-seedling text-5xl text-brand-500"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold mb-3">Агро-Квиз</h1>
+            <p class="text-brand-50 mb-8 opacity-80">Проверьте свои знания о ведущих предприятиях аграрной отрасли Беларуси.</p>
+            
+            <button onclick="startQuiz()" class="w-full max-w-[280px] bg-brand-500 text-white font-bold text-lg py-4 rounded-2xl shadow-[0_4px_14px_0_rgba(16,185,129,0.39)] transition-transform active:scale-95">
+                Начать тест
+            </button>
+        </div>
+
+        <!-- ЭКРАН 2: САМ КВИЗ -->
+        <div id="screen-quiz" class="screen bg-slate-50 flex-col">
+            <!-- Шапка с прогрессом -->
+            <div class="bg-white px-6 pt-8 pb-4 shadow-sm z-10 shrink-0 rounded-b-[2rem]">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-sm font-bold text-slate-400 uppercase tracking-wider" id="question-counter">Вопрос 1/10</span>
+                    <div class="bg-brand-50 text-brand-600 px-3 py-1 rounded-full text-sm font-extrabold flex items-center gap-1">
+                        <i class="fa-solid fa-star text-xs"></i> <span id="score-display">0</span>
+                    </div>
+                </div>
+                <!-- Полоска прогресса -->
+                <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="bg-brand-500 h-full transition-all duration-300 w-0 rounded-full"></div>
+                </div>
+            </div>
+
+            <!-- Текст вопроса и варианты -->
+            <div class="flex-grow scrollable-content px-6 pt-6 flex flex-col">
+                <h2 id="question-text" class="text-xl sm:text-2xl font-extrabold text-slate-800 mb-8 leading-snug">
+                    Здесь будет текст вопроса...
+                </h2>
+                
+                <div id="options-container" class="flex flex-col gap-3 mt-auto mb-4">
+                    <!-- Кнопки генерируются через JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ЭКРАН 3: РЕЗУЛЬТАТЫ -->
+        <div id="screen-result" class="screen bg-white justify-center items-center text-center p-6">
+            <div id="result-icon-container" class="w-28 h-28 bg-brand-50 rounded-full flex justify-center items-center mb-6">
+                <i id="result-icon" class="fa-solid fa-trophy text-6xl text-brand-500"></i>
+            </div>
+            
+            <h2 class="text-3xl font-extrabold text-slate-800 mb-2" id="result-title">Отлично!</h2>
+            <p class="text-slate-500 mb-8" id="result-desc">Вы успешно завершили проверку.</p>
+            
+            <div class="w-full bg-slate-50 rounded-2xl p-6 mb-8 flex justify-around items-center border border-slate-100">
+                <div>
+                    <p class="text-xs text-slate-400 font-bold uppercase mb-1">Оценка</p>
+                    <p class="text-4xl font-black text-slate-800" id="final-score-val">10</p>
+                </div>
+                <div class="w-px h-10 bg-slate-200"></div>
+                <div>
+                    <p class="text-xs text-slate-400 font-bold uppercase mb-1">Из 10</p>
+                    <p class="text-2xl font-bold text-slate-500">вопросов</p>
+                </div>
+            </div>
+
+            <button onclick="restartQuiz()" class="w-full bg-slate-800 text-white font-bold text-lg py-4 rounded-2xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Пройти заново
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // База данных вопросов
+        const quizData = [
+            {
+                question: "Какое белорусское агропредприятие специализируется преимущественно на производстве детского питания?",
+                options: ["ОАО «Беллакт»", "ОАО «Савушкин продукт»", "ОАО «Молочный Мир»", "Агрокомбинат «Дзержинский»"],
+                correctAnswerIndex: 0
+            },
+            {
+                question: "Какую основную специализацию имеет агрокомбинат «Дзержинский»?",
+                options: ["Молочные продукты", "Производство мяса птицы", "Выращивание зерновых", "Производство сыров"],
+                correctAnswerIndex: 1
+            },
+            {
+                question: "В каком городе располагается головное предприятие ОАО «Савушкин продукт»?",
+                options: ["Гродно", "Волковыск", "Брест", "Могилёв"],
+                correctAnswerIndex: 2
+            },
+            {
+                question: "Какой из перечисленных факторов НЕ относится к прямому вкладу агропромышленного комплекса в экономику?",
+                options: ["Развитие сельских территорий", "Создание рабочих мест", "Развитие тяжелой металлургии", "Укрепление прод. безопасности"],
+                correctAnswerIndex: 2
+            },
+            {
+                question: "Какое из ведущих предприятий молочной отрасли базируется в городе Гродно?",
+                options: ["ОАО «Бабушкина крынка»", "ОАО «Молочный Мир»", "ОАО «Беллакт»", "ОАО «Савушкин продукт»"],
+                correctAnswerIndex: 1
+            },
+            {
+                question: "Чем на рынке особенно выделяется ОАО «Бабушкина крынка»?",
+                options: ["Производством детских каш", "Только внутренними продажами", "Высокими объёмами производства", "Выращиванием птицы"],
+                correctAnswerIndex: 2
+            },
+            {
+                question: "Какую основную функцию по отношению к промышленности выполняет аграрная отрасль?",
+                options: ["Закупает всю готовую технику", "Поставляет сырьё для переработки", "Строит новые заводы", "Обучает IT-специалистов"],
+                correctAnswerIndex: 1
+            },
+            {
+                question: "В каком населенном пункте расположены производственные мощности ОАО «Беллакт»?",
+                options: ["Волковыск", "Минск", "Брест", "Гомель"],
+                correctAnswerIndex: 0
+            },
+            {
+                question: "Что из нижеперечисленного является фактором успеха ведущих агропредприятий Беларуси?",
+                options: ["Использование старого оборудования", "Снижение объемов экспорта", "Постоянная модернизация производства", "Отказ от новых технологий"],
+                correctAnswerIndex: 2
+            },
+            {
+                question: "Какая продукция является общей для ассортимента «Савушкина продукта» и «Молочного Мира»?",
+                options: ["Мясо птицы и яйца", "Детские сухие смеси", "Твердые сыры и питьевое молоко", "Овощи и фрукты"],
+                correctAnswerIndex: 2
+            }
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let isAnswering = false; // Блокировка нажатий во время анимации
+
+        // Настройка простейших звуков (веб-аудио)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            
+            if (type === 'correct') {
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            } else if (type === 'wrong') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                osc.frequency.linearRampToValueAtTime(150, audioCtx.currentTime + 0.2);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+
+        // Логика экранов
+        function switchScreen(fromId, toId) {
+            const fromEl = document.getElementById(fromId);
+            const toEl = document.getElementById(toId);
+            fromEl.classList.add('exit');
+            setTimeout(() => {
+                fromEl.classList.remove('active', 'exit');
+                toEl.classList.add('active');
+            }, 300); // время совпадает с CSS transition
+        }
+
+        function startQuiz() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            score = 0;
+            currentQuestionIndex = 0;
+            document.getElementById('score-display').textContent = score;
+            switchScreen('screen-start', 'screen-quiz');
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            isAnswering = false;
+            const q = quizData[currentQuestionIndex];
+            
+            // Обновляем прогресс
+            document.getElementById('question-counter').textContent = `Вопрос ${currentQuestionIndex + 1}/${quizData.length}`;
+            const progressPercent = ((currentQuestionIndex) / quizData.length) * 100;
+            document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+
+            // Текст вопроса
+            const qText = document.getElementById('question-text');
+            qText.style.opacity = 0;
+            qText.textContent = q.question;
+            setTimeout(() => qText.style.opacity = 1, 50);
+
+            // Рендер кнопок
+            const container = document.getElementById('options-container');
+            container.innerHTML = '';
+            
+            const letters = ['A', 'B', 'C', 'D'];
+            q.options.forEach((optText, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold flex justify-center items-center shrink-0 text-sm option-letter transition-colors">
+                        ${letters[index]}
+                    </div>
+                    <span class="flex-grow">${optText}</span>
+                    <i class="fa-solid fa-check text-white opacity-0 transition-opacity option-icon ml-auto"></i>
+                `;
+                btn.onclick = () => handleAnswer(index, btn);
+                container.appendChild(btn);
+            });
+        }
+
+        function handleAnswer(selectedIndex, btnElement) {
+            if (isAnswering) return;
+            isAnswering = true;
+
+            const q = quizData[currentQuestionIndex];
+            const isCorrect = (selectedIndex === q.correctAnswerIndex);
+            const allBtns = document.querySelectorAll('.option-btn');
+            
+            // Блокируем все кнопки
+            allBtns.forEach(b => b.disabled = true);
+
+            const letterDiv = btnElement.querySelector('.option-letter');
+            const icon = btnElement.querySelector('.option-icon');
+
+            if (isCorrect) {
+                playSound('correct');
+                score++;
+                document.getElementById('score-display').textContent = score;
+                btnElement.classList.add('correct');
+                letterDiv.classList.replace('bg-slate-100', 'bg-brand-500');
+                letterDiv.classList.replace('text-slate-500', 'text-white');
+                icon.classList.remove('opacity-0');
+            } else {
+                playSound('wrong');
+                btnElement.classList.add('wrong');
+                letterDiv.classList.replace('bg-slate-100', 'bg-red-500');
+                letterDiv.classList.replace('text-slate-500', 'text-white');
+                icon.classList.replace('fa-check', 'fa-xmark');
+                icon.classList.remove('opacity-0');
+                
+                // Подсвечиваем правильный для наглядности
+                const correctBtn = allBtns[q.correctAnswerIndex];
+                correctBtn.classList.add('border-brand-500', 'bg-brand-50');
+            }
+
+            // Ждем и переключаем
+            setTimeout(() => {
+                currentQuestionIndex++;
+                if (currentQuestionIndex < quizData.length) {
+                    loadQuestion();
+                } else {
+                    showResults();
+                }
+            }, 1200);
+        }
+
+        function showResults() {
+            // Обновляем прогресс до 100%
+            document.getElementById('progress-bar').style.width = '100%';
+            
+            setTimeout(() => {
+                document.getElementById('final-score-val').textContent = score;
+                
+                const title = document.getElementById('result-title');
+                const desc = document.getElementById('result-desc');
+                const iconContainer = document.getElementById('result-icon-container');
+                const icon = document.getElementById('result-icon');
+
+                if (score >= 9) {
+                    title.textContent = "Превосходно!";
+                    desc.textContent = "Вы отлично знаете аграрную отрасль.";
+                    iconContainer.className = 'w-28 h-28 bg-yellow-50 rounded-full flex justify-center items-center mb-6';
+                    icon.className = 'fa-solid fa-crown text-6xl text-yellow-500';
+                    fireConfetti();
+                } else if (score >= 6) {
+                    title.textContent = "Хороший результат!";
+                    desc.textContent = "Вы усвоили основную информацию.";
+                    iconContainer.className = 'w-28 h-28 bg-brand-50 rounded-full flex justify-center items-center mb-6';
+                    icon.className = 'fa-solid fa-thumbs-up text-6xl text-brand-500';
+                } else {
+                    title.textContent = "Нужно повторить";
+                    desc.textContent = "Стоит еще раз просмотреть презентацию.";
+                    iconContainer.className = 'w-28 h-28 bg-red-50 rounded-full flex justify-center items-center mb-6';
+                    icon.className = 'fa-solid fa-book-open text-6xl text-red-500';
+                }
+
+                switchScreen('screen-quiz', 'screen-result');
+            }, 300);
+        }
+
+        function restartQuiz() {
+            switchScreen('screen-result', 'screen-start');
+        }
+
+        function fireConfetti() {
+            var duration = 2500;
+            var end = Date.now() + duration;
+            (function frame() {
+                confetti({ particleCount: 4, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#10b981', '#3b82f6'] });
+                confetti({ particleCount: 4, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#10b981', '#3b82f6'] });
+                if (Date.now() < end) requestAnimationFrame(frame);
+            }());
+        }
+    </script>
+</body>
+</html>
